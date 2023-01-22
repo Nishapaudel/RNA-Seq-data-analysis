@@ -1,0 +1,128 @@
+---
+title: "Normalization of RNA seq data"
+author: "Nisha_paudel"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: simplex
+    toc: true
+    toc_depth: 2
+    toc_float: true
+vignette: >
+  %\VignetteIndexEntry{Normalization of RNA seq}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{=html}
+<script>
+$(document).ready(function(){
+    $('[data-toggle="popover"]').popover(); 
+});
+</script>
+```
+
+------------------------------------------------------------------------
+
+```{r setup, include= TRUE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Normalization Techniques in RNA seq
+
+The first step in the DE analysis workflow is count normalization, which is necessary to make accurate comparisons of gene expression between samples. It makes the expression levels are more comparable between and/or within samples.While normalization is essential for differential expression analyses, it is also necessary for exploratory data analysis, visualization of data, and whenever you are exploring or comparing counts between or within samples. Technical factors that may influence the counts
+
+-   Sequencning depth (directly proportional)
+
+-   Gene length (directly proportional)
+
+-   RNA composition
+
+    for more details [hbc training for DE seq Normalization](https://hbctraining.github.io/DGE_workshop_salmon_online/lessons/02_DGE_count_normalization.html "Normalization")
+
+    | S no. | Normalizaion Menthods                                                                                                        | Recommentations                                                                                                          |
+    |-------|------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+    |       | **CPM** (counts per million)                                                                                                 | gene count comparisons between replicates of the same sample group; **NOT for within sample comparisons or DE analysis** |
+    |       | **TPM** (transcripts per kilobase million)                                                                                   | gene count comparisons within a sample or between samples of the same sample group; **NOT for DE analysis**              |
+    |       | **RPKM/FPKM** (reads/fragments per kilobase of exon per million reads/fragments mapped)                                      | gene count comparisons between genes within a sample; **NOT for between sample comparisons or DE analysis**              |
+    |       | DESeq2\'s **median of ratios** [[1](https://genomebiology.biomedcentral.com/articles/10.1186/gb-2010-11-10-r106)]            | gene count comparisons between samples and for **DE analysis**; **NOT for within sample comparisons**                    |
+    |       | EdgeR\'s **trimmed mean of M values (TMM)** [[2](https://genomebiology.biomedcentral.com/articles/10.1186/gb-2010-11-3-r25)] | gene count comparisons between samples and for **DE analysis**; **NOT for within sample comparisons**                    |
+
+    : Various normalization techniquesCount normalization using DESeq2
+
+## 1. load metadata and counts data
+
+Load the count data
+
+```{r}
+# Read the counts and design files
+library (knitr)
+counts <- as.matrix(read.csv('/home/nisha/Desktop/Richa/rna_seq_ccmb_manaul/new_analysis/all_count_matrix', sep=',', row.names='Transcript'))
+
+
+kable(counts[1:6,], caption = 'Six lines from the count matrix')
+```
+
+```{r}
+col_data <- read.csv('/home/nisha/Desktop/Richa/rna_seq_ccmb_manaul/new_analysis/design.txt', sep=',', row.names=1)
+library(kableExtra)
+col_data %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F)
+```
+
+## 2. Match the metadata and counts data
+
+We should always make sure that we have sample names that match between the two files, and that the samples are in the same order. DESeq2 will output an error if this is not the case.
+
+```{r}
+
+all(rownames(col_data) %in% colnames(counts))
+all(rownames(col_data) == colnames(counts))
+
+```
+
+## 3. Create DEseq2 object
+
+DEseq2 have pre-specified **data slots**, which hold specific types/classes of data. The data stored in these pre-specified slots can be accessed by using specific package-defined functions.
+
+To create the object, we will need the **count matrix** and the **metadata** table as input. We will also need to specify a **design formula**. The design formula specifies the column(s) in the metadata table and how they should be used in the analysis. For our dataset we only have three columns we are interested in, which are `~Sex`, `~Age` and `~Condition`This column `~Age`has four factor levels E14, P4, P14 and P60 , which tells DESeq2 that for each gene we want to evaluate gene expression change with respect to these different levels.
+
+### load the libraries
+
+```{r, message=FALSE, warning=FALSE}
+#load the library
+library(DESeq2)
+```
+
+### create the object
+
+```{r, message=FALSE, warning=FALSE}
+dds <- DESeqDataSetFromMatrix(countData = counts, colData = col_data, design =~ Condition)
+dds
+```
+
+## 4. Generate the normalized counts ( Be careful)
+
+To perform the **median of ratios method** of normalization, DESeq2 has a single `estimateSizeFactors()` function that will generate size factors. We will demonstrate this function in the example below, but **in a typical RNA-seq analysis, this step is automatically performed by the `DESeq()` function**
+
+```{r}
+dds <- estimateSizeFactors(dds)
+
+```
+
+Now, to retrieve the normalized counts matrix from `dds`, we use the `counts()` function and add the argument `normalized=TRUE`.
+
+```{r}
+normalized_counts <- counts(dds, normalized=TRUE)
+```
+
+### Save the file 
+
+We can save this normalized data matrix to file for later use:
+
+**Important note:**DESeq2 doesn\'t actually use normalized counts, rather it uses the raw counts and models the normalization inside the Generalized Linear Model (GLM). These normalized counts will be useful for downstream visualization of results, but cannot be used as input to DESeq2 or any other tools that perform differential expression analysis that use the negative binomial model.
+
+```{r}
+write.table(normalized_counts, file="/home/nisha/Desktop/Richa/rna_seq_ccmb_manaul/new_analysis/normalised_counts.tsv", sep="\t", quote=F, col.names=NA)
+```
